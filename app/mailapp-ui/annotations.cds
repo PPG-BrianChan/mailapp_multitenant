@@ -1,0 +1,1 @@
+using ma_uiService as service from '../../srv/s4btp-ca-mailappservices';
