@@ -1,10 +1,10 @@
 const cds = require('@sap/cds');
 const setMailEntityFieldControl = require('./libs/setMailEntityFieldControl.js')
 const resendSuccessMessage = 'Resending is successful. Refresh screen to update entry status'
-const executeHttpRequest = require('@sap-cloud-sdk/core');
+const { executeHttpRequest } = require('@sap-cloud-sdk/core');
 
 
-module.exports = (srv) => {
+module.exports = async function (srv) {
     const { mailrequests, whitelists, attachments } = srv.entities;
     srv.on('READ', mailrequests, async (req) => {
         let query = '';
@@ -44,7 +44,7 @@ module.exports = (srv) => {
             return mailrequestlist;
         }
         catch (error) {
-            if (error.response.data !== undefined) {
+            if (error.response.data) {
                 req.error({ "code": error.response.data.error.code, "message": error.response.data.error.message })
             } else {
                 req.error({ "message": error.message });

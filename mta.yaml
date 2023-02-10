@@ -1,24 +1,173 @@
----
-_schema-version: '3.1'
+_schema-version: "3.1"
 ID: s4btp-ca-mailapp
+description: A simple CAP project.
 version: 1.0.0
-description: "A simple CAP project."
+modules:
+  - name: s4btp-ca-mailapp-srv
+    type: nodejs
+    path: gen/srv
+    requires:
+      - name: s4btp-ca-mailapp-registry
+      - name: uaa_s4btp-ca-mailapp
+      - name: s4btp-ca-mailapp-destination-service
+      - name: s4btp-ca-mailapp-service-manager
+      - name: portal_resources_s4btp-ca-mailapp
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+      - name: mtx-api
+        properties:
+          mtx-url: ${default-url}
+    parameters:
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm-ci
+    properties:
+      SUBSCRIPTION_URL: ${protocol}://\${tenant_subdomain}-${default-uri}
+      SUBSCRIPTION_URL_REPLACEMENT_RULES: [ [ '-srv', '' ] ]
+  - name: s4btp-ca-mailapp-approuter
+    type: approuter.nodejs
+    path: s4btp-ca-mailapp-approuter
+    requires:
+      - name: s4btp-ca-mailapp_html_repo_runtime
+      - name: uaa_s4btp-ca-mailapp
+      - name: s4btp-ca-mailapp-destination-service
+      - name: s4btp-ca-mailapp-registry
+      - name: portal_resources_s4btp-ca-mailapp
+      - name: srv-api
+        group: destinations
+        properties:
+          Authentication: NoAuthentication
+          ProxyType: Internet
+          Type: HTTP
+          forwardAuthToken: true
+          name: cap-service-endpoint
+          timeout: 60000
+          url: ~{srv-url}
+    parameters:
+      disk-quota: 256M
+      memory: 256M
+      keep-existing:
+        routes: true
+    properties:
+      TENANT_HOST_PATTERN: "^(.*)-s4btp-ca-mailapp-approuter.${default-domain}" 
+  - name: s4btp-ca-mailapp_ui_deployer
+    type: com.sap.application.content
+    path: .
+    requires:
+      - name: s4btp-ca-mailapp_html_repo_host
+        parameters:
+          content-target: true
+    build-parameters:
+      build-result: resources
+      requires:
+        - artifacts:
+            - MailAppmailappui.zip
+          name: MailAppmailappui
+          target-path: resources/
+  - name: MailAppmailappui
+    type: html5
+    path: app/mailapp-ui
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm install
+        - npm run build:cf
+      supported-platforms:
+        []
+  - name: s4btp-ca-mailapp-flp
+    type: com.sap.application.content
+    path: s4btp-ca-mailapp-flp
+    requires:
+      - name: portal_resources_s4btp-ca-mailapp
+        parameters:
+          content-target: true
+          service-key:
+            config:
+              content-endpoint: developer
+            name: content-deploy-key
+      - name: s4btp-ca-mailapp_html_repo_host
+      - name: s4btp-ca-mailapp_ui_deployer
+      - name: uaa_s4btp-ca-mailapp
+      - name: s4btp-ca-mailapp-registry
+resources:
+  - name: s4btp-ca-mailapp-registry
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        appName: s4btp-ca-mailapp-${org}-${space}
+        appUrls:
+          callbackTimeoutMillis: 300000
+          getDependencies: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/dependencies
+          onSubscription: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/tenant/{tenantId}
+          onSubscriptionAsync: false
+          onUnSubscriptionAsync: false
+        category: CAP Multitenant
+        description: Multitenant Mail App
+        displayName: Mail Management App
+        xsappname: s4btp-ca-mailapp-${org}-${space}
+      service: saas-registry
+      service-plan: application
+    requires:
+      - name: mtx-api
+      - name: srv-api
+  - name: s4btp-ca-mailapp_html_repo_runtime
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-runtime
+  - name: uaa_s4btp-ca-mailapp
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        tenant-mode: shared
+        xsappname: s4btp-ca-mailapp-${org}-${space}
+      path: ./xs-security.json
+      service: xsuaa
+      service-name: s4btp-ca-mailapp-xsuaa-service
+      service-plan: application
+  - name: s4btp-ca-mailapp_html_repo_host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+  - name: s4btp-ca-mailapp-destination-service
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        HTML5Runtime_enabled: false
+        init_data:
+          instance:
+            destinations:
+              - Authentication: NoAuthentication
+                Name: ui5
+                ProxyType: Internet
+                Type: HTTP
+                URL: https://ui5.sap.com
+            existing_destinations_policy: update
+        version: 1.0.0
+      service: destination
+      service-name: s4btp-ca-mailapp-destination-service
+      service-plan: lite
+  - name: s4btp-ca-mailapp-service-manager
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: service-manager
+      service-plan: container
+    properties:
+      hdi-service-name: ${service-name}
+  - name: portal_resources_s4btp-ca-mailapp
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: portal
+      service-plan: standard
 parameters:
+  deploy_mode: html5-repo
   enable-parallel-deployments: true
 build-parameters:
   before-all:
     - builder: custom
       commands:
         - npx -p @sap/cds-dk cds build --production
-modules:
-  - name: s4btp-ca-mailapp-srv
-    type: nodejs
-    path: gen/srv
-    parameters:
-      buildpack: nodejs_buildpack
-    build-parameters:
-      builder: npm-ci
-    provides:
-      - name: srv-api # required by consumers of CAP services (e.g. approuter)
-        properties:
-          srv-url: ${default-url}
